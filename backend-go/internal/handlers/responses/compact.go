@@ -176,12 +176,13 @@ func handleMultiChannelCompact(
 ) {
 	failedChannels := make(map[int]bool)
 	maxAttempts := channelScheduler.GetActiveChannelCount(scheduler.ChannelKindResponses)
+	strictFailover := channelScheduler.FailoverOnlyAfterCircuitOpen()
 	var lastErr *compactError
 	var selectionErr error
 	requestModel := extractCompactRequestModel(bodyBytes)
 	channelLogStore := channelScheduler.GetChannelLogStore(scheduler.ChannelKindResponses)
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := 0; strictFailover || attempt < maxAttempts; attempt++ {
 		selection, err := channelScheduler.SelectChannel(c.Request.Context(), userID, failedChannels, scheduler.ChannelKindResponses, requestModel, c.Param("routePrefix"), c.GetHeader("X-Channel"))
 		if err != nil {
 			selectionErr = err
@@ -206,10 +207,16 @@ func handleMultiChannelCompact(
 			return
 		}
 
-		failedChannels[channelIndex] = true
 		if compactErr != nil {
 			lastErr = compactErr
 		}
+		if strictFailover && !channelScheduler.IsChannelCircuitOpen(scheduler.ChannelKindResponses, channelIndex) {
+			if upstream != nil {
+				common.RequestLogf(c, "[Compact-Failover] 渠道 [%d] %s 尚未熔断，继续在当前渠道重试", channelIndex, upstream.Name)
+			}
+			continue
+		}
+		failedChannels[channelIndex] = true
 	}
 
 	// 所有渠道都失败

@@ -317,7 +317,7 @@ export function useAppController() {
     }
   })
 
-  // 熔断器配置
+  // 调校台（熔断器与流控）
   const circuitBreakerDialogOpen = ref(false)
   const cbSaving = ref(false)
   const activePreset = ref('balanced')
@@ -331,6 +331,11 @@ export function useAppController() {
     streamInactivityTimeoutMs: 90000,
     streamToolCallIdleTimeoutMs: 300000,
   })
+
+  // 扩展配置
+  const extensionConfigDialogOpen = ref(false)
+  const extensionConfigSaving = ref(false)
+  const failoverOnlyAfterCircuitOpen = ref(false)
 
   // 预设向更宽松方向平移一档：原温和→均衡、原均衡→激进、原激进移除（需手动自定义）
   // 新增更宽松的温和策略，降低新用户误熔断概率
@@ -426,6 +431,31 @@ export function useAppController() {
       showToast(t('toast.circuitBreakerFailed', { message: e instanceof Error ? e.message : t('system.unknown') }), 'error')
     } finally {
       cbSaving.value = false
+    }
+  }
+
+  const openExtensionConfigDialog = async () => {
+    try {
+      const params = await api.getCircuitBreaker()
+      failoverOnlyAfterCircuitOpen.value = params.failoverOnlyAfterCircuitOpen === true
+    } catch (e) {
+      console.error('Failed to load extension config:', e)
+    }
+    extensionConfigDialogOpen.value = true
+  }
+
+  const saveExtensionConfig = async () => {
+    extensionConfigSaving.value = true
+    try {
+      await api.setCircuitBreaker({
+        failoverOnlyAfterCircuitOpen: failoverOnlyAfterCircuitOpen.value,
+      })
+      extensionConfigDialogOpen.value = false
+      showToast(t('toast.extensionConfigSaved'), 'success')
+    } catch (e) {
+      showToast(t('toast.extensionConfigFailed', { message: e instanceof Error ? e.message : t('system.unknown') }), 'error')
+    } finally {
+      extensionConfigSaving.value = false
     }
   }
 
@@ -962,6 +992,11 @@ export function useAppController() {
     onSliderChange,
     openCircuitBreakerDialog,
     saveCircuitBreaker,
+    extensionConfigDialogOpen,
+    extensionConfigSaving,
+    failoverOnlyAfterCircuitOpen,
+    openExtensionConfigDialog,
+    saveExtensionConfig,
     isMac,
     toggleDarkMode,
     isAuthenticated,

@@ -337,6 +337,23 @@
           </div>
 
           <div class="action-bar-right">
+            <!-- 扩展配置入口 -->
+            <v-tooltip location="bottom" content-class="ccx-tooltip">
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  icon="mdi-tune-variant"
+                  variant="tonal"
+                  size="large"
+                  color="default"
+                  class="action-btn"
+                  :aria-label="t('app.actions.extensionSettings')"
+                  @click="openExtensionConfigDialog"
+                />
+              </template>
+              <span>{{ t('tooltip.extensionSettings') }}</span>
+            </v-tooltip>
+
             <!-- Fuzzy 模式切换按钮 -->
             <v-tooltip location="bottom" content-class="ccx-tooltip">
               <template #activator="{ props }">
@@ -359,7 +376,7 @@
               <span>{{ systemStore.fuzzyModeLoadError ? t('tooltip.loadFailedRefresh') : (preferencesStore.fuzzyModeEnabled ? t('tooltip.fuzzyEnabled') : t('tooltip.fuzzyDisabled')) }}</span>
             </v-tooltip>
 
-            <!-- 熔断器配置按钮 -->
+            <!-- 调校台配置按钮 -->
             <v-tooltip location="bottom" content-class="ccx-tooltip">
               <template #activator="{ props }">
                 <v-btn
@@ -430,7 +447,7 @@
     <!-- 新用户指引对话框 -->
     <UserGuideDialog v-model="showGuide" />
 
-    <!-- 熔断器配置对话框 -->
+    <!-- 调校台配置对话框 -->
     <v-dialog v-model="circuitBreakerDialogOpen" max-width="640">
       <v-card class="cb-dialog-card">
         <v-card-title class="cb-dialog-title">
@@ -641,6 +658,39 @@
       </v-card>
     </v-dialog>
 
+    <!-- 扩展配置对话框 -->
+    <v-dialog v-model="extensionConfigDialogOpen" max-width="480">
+      <v-card class="cb-dialog-card">
+        <v-card-title class="cb-dialog-title">
+          {{ t('dialog.extensionConfig.title') }}
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="cb-dialog-body">
+          <v-switch
+            v-model="failoverOnlyAfterCircuitOpen"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            :label="t('dialog.extensionConfig.failoverOnlyAfterCircuitOpen')"
+          />
+          <div class="text-caption text-medium-emphasis mt-2">
+            {{ t('dialog.extensionConfig.failoverOnlyAfterCircuitOpenHint') }}
+          </div>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions class="cb-dialog-actions">
+          <v-spacer />
+          <v-btn variant="outlined" class="cb-dialog-btn" @click="extensionConfigDialogOpen = false">
+            {{ t('app.actions.cancel') }}
+          </v-btn>
+          <v-btn color="primary" variant="elevated" class="cb-dialog-btn cb-dialog-btn-primary" :loading="extensionConfigSaving" @click="saveExtensionConfig">
+            {{ t('app.actions.confirm') }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- 添加API密钥对话框 -->
     <v-dialog v-model="dialogStore.showAddKeyModal" max-width="500">
       <v-card rounded="lg">
@@ -814,6 +864,11 @@ const {
   onSliderChange,
   openCircuitBreakerDialog,
   saveCircuitBreaker,
+  extensionConfigDialogOpen,
+  extensionConfigSaving,
+  failoverOnlyAfterCircuitOpen,
+  openExtensionConfigDialog,
+  saveExtensionConfig,
   isMac,
   toggleDarkMode,
   isAuthenticated,

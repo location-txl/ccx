@@ -44,7 +44,8 @@ func TestGetCircuitBreaker_ReturnsToolCallIdleTimeout(t *testing.T) {
 	config.SetRuntimeTimeouts(123000, 45000)
 	t.Cleanup(func() { config.SetRuntimeTimeouts(120000, 60000) })
 
-	w := performSettingsJSON(GetCircuitBreaker(func() metrics.CircuitBreakerParams {
+	cfgManager := newSettingsTestConfigManager(t)
+	w := performSettingsJSON(GetCircuitBreaker(cfgManager, func() metrics.CircuitBreakerParams {
 		return metrics.CircuitBreakerParams{
 			WindowSize:                   10,
 			FailureThreshold:             0.5,
@@ -71,6 +72,19 @@ func TestGetCircuitBreaker_ReturnsToolCallIdleTimeout(t *testing.T) {
 	}
 	if got := int(body["responseHeaderTimeoutMs"].(float64)); got != 45000 {
 		t.Fatalf("responseHeaderTimeoutMs = %d, want 45000", got)
+	}
+}
+
+func TestSetCircuitBreaker_SavesFailoverOnlyAfterCircuitOpen(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfgManager := newSettingsTestConfigManager(t)
+
+	w := performSettingsJSON(SetCircuitBreaker(cfgManager), http.MethodPut, `{"failoverOnlyAfterCircuitOpen":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !cfgManager.GetFailoverOnlyAfterCircuitOpen() {
+		t.Fatal("failoverOnlyAfterCircuitOpen should be enabled")
 	}
 }
 

@@ -114,8 +114,9 @@ func HandleMultiChannelFailoverWithSelectionFilter(
 	}
 
 	maxChannelAttempts := channelScheduler.GetActiveChannelCount(kind)
+	strictFailover := channelScheduler.FailoverOnlyAfterCircuitOpen()
 
-	for channelAttempt := 0; channelAttempt < maxChannelAttempts; channelAttempt++ {
+	for channelAttempt := 0; strictFailover || channelAttempt < maxChannelAttempts; channelAttempt++ {
 		// 检查客户端是否已断开连接
 		select {
 		case <-c.Request.Context().Done():
@@ -193,8 +194,6 @@ func HandleMultiChannelFailoverWithSelectionFilter(
 			return
 		}
 
-		failedChannels[channelIndex] = true
-
 		if result.FailoverError != nil {
 			lastFailoverError = result.FailoverError
 			if upstream != nil {
@@ -206,8 +205,21 @@ func HandleMultiChannelFailoverWithSelectionFilter(
 			lastError = result.LastError
 		}
 
+		if strictFailover && !channelScheduler.IsChannelCircuitOpen(kind, channelIndex) {
+			if upstream != nil {
+				RequestLogf(c, "[%s-Failover] 渠道 [%d] %s 尚未熔断，继续在当前渠道重试", apiType, channelIndex, upstream.Name)
+			}
+			continue
+		}
+
+		failedChannels[channelIndex] = true
+
 		if result.Attempted && upstream != nil {
-			RequestLogf(c, "[%s-Failover] 警告: 渠道 [%d] %s 所有密钥都失败，尝试下一个渠道", apiType, channelIndex, upstream.Name)
+			if strictFailover {
+				RequestLogf(c, "[%s-Failover] 渠道 [%d] %s 已熔断，尝试下一个渠道", apiType, channelIndex, upstream.Name)
+			} else {
+				RequestLogf(c, "[%s-Failover] 警告: 渠道 [%d] %s 所有密钥都失败，尝试下一个渠道", apiType, channelIndex, upstream.Name)
+			}
 		}
 	}
 

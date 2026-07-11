@@ -41,7 +41,7 @@ func SetFuzzyMode(cfgManager *config.ConfigManager) gin.HandlerFunc {
 
 // GetCircuitBreaker 获取熔断器运行时配置
 // getCurrent: 返回当前运行时生效的熔断器参数的函数
-func GetCircuitBreaker(getCurrent func() metrics.CircuitBreakerParams, envCfg *config.EnvConfig) gin.HandlerFunc {
+func GetCircuitBreaker(cfgManager *config.ConfigManager, getCurrent func() metrics.CircuitBreakerParams, envCfg *config.EnvConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		params := getCurrent()
 		c.JSON(200, gin.H{
@@ -53,6 +53,7 @@ func GetCircuitBreaker(getCurrent func() metrics.CircuitBreakerParams, envCfg *c
 			"streamFirstContentTimeoutMs":  params.StreamFirstContentTimeoutMs,
 			"streamInactivityTimeoutMs":    params.StreamInactivityTimeoutMs,
 			"streamToolCallIdleTimeoutMs":  params.StreamToolCallIdleTimeoutMs,
+			"failoverOnlyAfterCircuitOpen": cfgManager.GetFailoverOnlyAfterCircuitOpen(),
 		})
 	}
 }
@@ -69,6 +70,7 @@ func SetCircuitBreaker(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			StreamFirstContentTimeoutMs  *int     `json:"streamFirstContentTimeoutMs"`
 			StreamInactivityTimeoutMs    *int     `json:"streamInactivityTimeoutMs"`
 			StreamToolCallIdleTimeoutMs  *int     `json:"streamToolCallIdleTimeoutMs"`
+			FailoverOnlyAfterCircuitOpen *bool    `json:"failoverOnlyAfterCircuitOpen"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": "请求格式无效"})
@@ -138,11 +140,18 @@ func SetCircuitBreaker(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			c.JSON(500, gin.H{"error": "保存配置失败"})
 			return
 		}
+		if req.FailoverOnlyAfterCircuitOpen != nil {
+			if err := cfgManager.SetFailoverOnlyAfterCircuitOpen(*req.FailoverOnlyAfterCircuitOpen); err != nil {
+				c.JSON(500, gin.H{"error": "保存配置失败"})
+				return
+			}
+		}
 
 		// 返回更新后的完整配置
 		updated := cfgManager.GetCircuitBreakerConfig()
 		c.JSON(200, gin.H{
-			"success": true,
+			"success":                      true,
+			"failoverOnlyAfterCircuitOpen": cfgManager.GetFailoverOnlyAfterCircuitOpen(),
 			"circuitBreaker": gin.H{
 				"windowSize":                   updated.WindowSize,
 				"failureThreshold":             updated.FailureThreshold,

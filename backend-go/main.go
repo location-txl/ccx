@@ -858,7 +858,7 @@ func main() {
 		apiGroup.PUT("/settings/fuzzy-mode", handlers.SetFuzzyMode(cfgManager))
 
 		// 熔断器运行时设置
-		apiGroup.GET("/settings/circuit-breaker", handlers.GetCircuitBreaker(messagesMetricsManager.GetCircuitBreakerConfig, envCfg))
+		apiGroup.GET("/settings/circuit-breaker", handlers.GetCircuitBreaker(cfgManager, messagesMetricsManager.GetCircuitBreakerConfig, envCfg))
 		apiGroup.PUT("/settings/circuit-breaker", handlers.SetCircuitBreaker(cfgManager))
 
 		// 会话调度看板 API

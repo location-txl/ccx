@@ -250,12 +250,14 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		}
 	}
 
+	strictFailover := s.FailoverOnlyAfterCircuitOpen()
+
 	// 1. 检查促销期渠道（手动覆盖之后，绕过健康检查）
 	promotedChannel := s.findPromotedChannel(activeChannels, kind)
 	if promotedChannel != nil && !failedChannels[promotedChannel.Index] {
 		// 促销渠道存在且未失败，直接使用（不检查健康状态，让用户设置的促销渠道有机会尝试）
 		upstream := s.getUpstreamByIndex(promotedChannel.Index, kind)
-		if upstream != nil && len(upstream.APIKeys) > 0 && !s.channelInRuntimeCooldown(kind, promotedChannel.Index) {
+		if upstream != nil && len(upstream.APIKeys) > 0 && (strictFailover || !s.channelInRuntimeCooldown(kind, promotedChannel.Index)) && (!strictFailover || s.channelCircuitState(upstream, kind) != metrics.CircuitStateOpen) {
 			failureRate := s.channelFailureRate(upstream, kind)
 			prefix := kindSchedulerLogPrefix(kind)
 			log.Printf("[%s-Promotion] 促销期优先选择渠道: [%d] %s (失败率: %.1f%%, 绕过健康检查)", prefix, promotedChannel.Index, upstream.Name, failureRate*100)
@@ -332,9 +334,9 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 			continue
 		}
 
-		// 跳过失败率过高的渠道（已熔断或即将熔断）
+		// 严格模式下，只有已 open 的渠道才能被提前跳过。
 		channelState := s.channelCircuitState(upstream, kind)
-		if channelState == metrics.CircuitStateOpen || !s.channelIsHealthy(upstream, kind) {
+		if channelState == metrics.CircuitStateOpen || (!strictFailover && !s.channelIsHealthy(upstream, kind)) {
 			failureRate := s.channelFailureRate(upstream, kind)
 			prefix := kindSchedulerLogPrefix(kind)
 			if channelState == metrics.CircuitStateOpen {
@@ -348,37 +350,40 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		}
 
 		// 跳过运行态 cooldown 中的渠道（如 429 Retry-After 或上游账号池临时不可用）
-		if s.channelInRuntimeCooldown(kind, ch.Index) {
+		if !strictFailover && s.channelInRuntimeCooldown(kind, ch.Index) {
 			prefix := kindSchedulerLogPrefix(kind)
 			log.Printf("[%s-Channel] 跳过运行态 cooldown 中的渠道: [%d] %s", prefix, ch.Index, ch.Name)
 			trace.skipChannel(ch, "priority_order", "runtime_cooldown", "")
 			continue
 		}
 
-		if deferred, ratio, scope, cooldown := s.channelRateLimitSoftDeferred(upstream, kind, ch.Index, model, time.Now()); deferred {
-			prefix := kindSchedulerLogPrefix(kind)
-			if cooldown {
-				log.Printf("[%s-RateLimit] 软跳过高水位渠道: [%d] %s scope=%s usage=%.0f%% cooldown (high=%.0f%%, recover<%.0f%%/%s)",
-					prefix, ch.Index, upstream.Name, scope, ratio*100, rateLimitLoadShedHighWatermark*100, rateLimitLoadShedLowWatermark*100, rateLimitLoadShedRecovery)
-			} else {
-				log.Printf("[%s-RateLimit] 软跳过高水位渠道: [%d] %s scope=%s usage=%.0f%% (high=%.0f%%, recover<%.0f%%/%s)",
-					prefix, ch.Index, upstream.Name, scope, ratio*100, rateLimitLoadShedHighWatermark*100, rateLimitLoadShedLowWatermark*100, rateLimitLoadShedRecovery)
+		if !strictFailover {
+			deferred, ratio, scope, cooldown := s.channelRateLimitSoftDeferred(upstream, kind, ch.Index, model, time.Now())
+			if deferred {
+				prefix := kindSchedulerLogPrefix(kind)
+				if cooldown {
+					log.Printf("[%s-RateLimit] 软跳过高水位渠道: [%d] %s scope=%s usage=%.0f%% cooldown (high=%.0f%%, recover<%.0f%%/%s)",
+						prefix, ch.Index, upstream.Name, scope, ratio*100, rateLimitLoadShedHighWatermark*100, rateLimitLoadShedLowWatermark*100, rateLimitLoadShedRecovery)
+				} else {
+					log.Printf("[%s-RateLimit] 软跳过高水位渠道: [%d] %s scope=%s usage=%.0f%% (high=%.0f%%, recover<%.0f%%/%s)",
+						prefix, ch.Index, upstream.Name, scope, ratio*100, rateLimitLoadShedHighWatermark*100, rateLimitLoadShedLowWatermark*100, rateLimitLoadShedRecovery)
+				}
+				softSkipped = append(softSkipped, softSkippedChannel{
+					channel:  ch,
+					upstream: upstream,
+					ratio:    ratio,
+					scope:    scope,
+				})
+				reason := "rate_limit_pressure"
+				if cooldown {
+					reason = "rate_limit_cooldown"
+				}
+				trace.skipChannel(ch, "priority_order", reason, fmt.Sprintf("scope=%s usage=%.0f%%", scope, ratio*100))
+				continue
 			}
-			softSkipped = append(softSkipped, softSkippedChannel{
-				channel:  ch,
-				upstream: upstream,
-				ratio:    ratio,
-				scope:    scope,
-			})
-			reason := "rate_limit_pressure"
-			if cooldown {
-				reason = "rate_limit_cooldown"
-			}
-			trace.skipChannel(ch, "priority_order", reason, fmt.Sprintf("scope=%s usage=%.0f%%", scope, ratio*100))
-			continue
 		}
 
-		if shouldReserveVisionChannelForText(kind, opts.HasImageContent, upstream, softSkipped) {
+		if !strictFailover && shouldReserveVisionChannelForText(kind, opts.HasImageContent, upstream, softSkipped) {
 			prefix := kindSchedulerLogPrefix(kind)
 			log.Printf("[%s-Vision] 文本请求保留可识图渠道: [%d] %s (待普通文本渠道水位 >= %.0f%% 后再作为溢出池)",
 				prefix, ch.Index, upstream.Name, rateLimitVisionReserveWatermark*100)
@@ -399,6 +404,9 @@ func (s *ChannelScheduler) SelectChannelWithOptions(ctx context.Context, opts Se
 		log.Printf("[%s-RateLimit] 所有低水位候选不可用，回退选择高水位渠道: [%d] %s scope=%s usage=%.0f%%",
 			prefix, skipped.channel.Index, skipped.upstream.Name, skipped.scope, skipped.ratio*100)
 		return finish(skipped.upstream, skipped.channel.Index, "rate_limit_pressure"), nil
+	}
+	if strictFailover {
+		return nil, traceErr(fmt.Errorf("没有未熔断的可用 %s 渠道", kindDisplayName(kind)))
 	}
 
 	// 3. 所有健康渠道都失败，选择失败率最低的作为降级
@@ -421,10 +429,10 @@ func (s *ChannelScheduler) channelAvailableForCandidateFilter(ch ChannelInfo, up
 	if ch.Status != "active" || upstream == nil || len(upstream.APIKeys) == 0 {
 		return false
 	}
-	if s.channelInRuntimeCooldown(kind, ch.Index) {
+	if s.channelCircuitState(upstream, kind) == metrics.CircuitStateOpen {
 		return false
 	}
-	return s.channelCircuitState(upstream, kind) != metrics.CircuitStateOpen
+	return s.FailoverOnlyAfterCircuitOpen() || !s.channelInRuntimeCooldown(kind, ch.Index)
 }
 
 func traceCandidateFilterSkips(before, after []ChannelInfo, trace *SelectionTrace) {
@@ -448,6 +456,20 @@ func (s *ChannelScheduler) channelCircuitState(upstream *config.UpstreamConfig, 
 		return metrics.CircuitStateClosed
 	}
 	return s.getMetricsManager(kind).GetChannelCircuitStateMultiURL(upstream.GetAllBaseURLs(), upstream.APIKeys, NormalizedMetricsServiceType(kind, upstream.ServiceType))
+}
+
+// FailoverOnlyAfterCircuitOpen 返回严格的跨渠道故障转移策略是否启用。
+func (s *ChannelScheduler) FailoverOnlyAfterCircuitOpen() bool {
+	return s != nil && s.configManager != nil && s.configManager.GetFailoverOnlyAfterCircuitOpen()
+}
+
+// IsChannelCircuitOpen 判断渠道聚合后的熔断状态是否已打开。
+func (s *ChannelScheduler) IsChannelCircuitOpen(kind ChannelKind, channelIndex int) bool {
+	if s == nil {
+		return false
+	}
+	upstream := s.getUpstreamByIndex(channelIndex, kind)
+	return upstream != nil && s.channelCircuitState(upstream, kind) == metrics.CircuitStateOpen
 }
 
 // channelInRuntimeCooldown 判断渠道是否处于运行态 cooldown。
@@ -683,6 +705,9 @@ func (s *ChannelScheduler) channelIsRuntimeAvailable(upstream *config.UpstreamCo
 	}
 	if s.channelCircuitState(upstream, kind) == metrics.CircuitStateOpen {
 		return false
+	}
+	if s.FailoverOnlyAfterCircuitOpen() {
+		return true
 	}
 	if !s.channelIsHealthy(upstream, kind) {
 		return false

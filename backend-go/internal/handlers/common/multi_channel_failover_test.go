@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,9 +23,10 @@ import (
 )
 
 type affinityTestEnv struct {
-	scheduler *scheduler.ChannelScheduler
-	cleanup   func()
-	affinity  *session.TraceAffinityManager
+	scheduler       *scheduler.ChannelScheduler
+	messagesMetrics *metrics.MetricsManager
+	cleanup         func()
+	affinity        *session.TraceAffinityManager
 }
 
 func newAffinityTestEnv(t *testing.T, cfg config.Config) affinityTestEnv {
@@ -63,8 +65,9 @@ func newAffinityTestEnv(t *testing.T, cfg config.Config) affinityTestEnv {
 	s := scheduler.NewChannelScheduler(cfgManager, messagesMetrics, responsesMetrics, geminiMetrics, chatMetrics, imagesMetrics, affinity, urlManager)
 
 	return affinityTestEnv{
-		scheduler: s,
-		affinity:  affinity,
+		scheduler:       s,
+		messagesMetrics: messagesMetrics,
+		affinity:        affinity,
 		cleanup: func() {
 			messagesMetrics.Stop()
 			responsesMetrics.Stop()
@@ -74,6 +77,37 @@ func newAffinityTestEnv(t *testing.T, cfg config.Config) affinityTestEnv {
 			cfgManager.Close()
 			os.RemoveAll(tmpDir)
 		},
+	}
+}
+
+func TestHandleMultiChannelFailover_StrictModeWaitsForCircuitOpen(t *testing.T) {
+	cfg := config.Config{
+		FailoverOnlyAfterCircuitOpen: true,
+		Upstream: []config.UpstreamConfig{
+			{Name: "first", BaseURL: "https://first.example.com", APIKeys: []string{"sk-first"}, Status: "active"},
+			{Name: "second", BaseURL: "https://second.example.com", APIKeys: []string{"sk-second"}, Status: "active"},
+		},
+	}
+
+	env := newAffinityTestEnv(t, cfg)
+	defer env.cleanup()
+	env.messagesMetrics.UpdateCircuitBreakerConfig(metrics.CircuitBreakerParams{WindowSize: 3, FailureThreshold: 1, ConsecutiveFailuresThreshold: 3})
+
+	var attempts []int
+	c := newTestGinContext(httptest.NewRecorder())
+	common.HandleMultiChannelFailover(c, config.NewEnvConfig(), env.scheduler, scheduler.ChannelKindMessages, "Messages", "user-strict", "", "",
+		func(selection *scheduler.SelectionResult) common.MultiChannelAttemptResult {
+			attempts = append(attempts, selection.ChannelIndex)
+			if selection.ChannelIndex == 0 {
+				requestID := env.messagesMetrics.RecordRequestConnected("https://first.example.com", "sk-first", "claude", "")
+				env.messagesMetrics.RecordRequestFinalizeFailure("https://first.example.com", "sk-first", "claude", requestID)
+				return common.MultiChannelAttemptResult{Attempted: true}
+			}
+			return common.MultiChannelAttemptResult{Handled: true, SuccessKey: "sk-second"}
+		}, nil, nil)
+
+	if got, want := attempts, []int{0, 0, 0, 1}; !slices.Equal(got, want) {
+		t.Fatalf("attempts = %v, want %v", got, want)
 	}
 }
 

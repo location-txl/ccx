@@ -490,12 +490,12 @@ export class ApiService {
   // ============== 熔断器配置 API ==============
 
   // 获取熔断器运行时配置
-  async getCircuitBreaker(): Promise<{ windowSize: number; failureThreshold: number; consecutiveFailuresThreshold: number; requestTimeoutMs: number; responseHeaderTimeoutMs: number; streamFirstContentTimeoutMs: number; streamInactivityTimeoutMs: number; streamToolCallIdleTimeoutMs: number }> {
+  async getCircuitBreaker(): Promise<{ windowSize: number; failureThreshold: number; consecutiveFailuresThreshold: number; requestTimeoutMs: number; responseHeaderTimeoutMs: number; streamFirstContentTimeoutMs: number; streamInactivityTimeoutMs: number; streamToolCallIdleTimeoutMs: number; failoverOnlyAfterCircuitOpen: boolean }> {
     return this.request('/settings/circuit-breaker')
   }
 
   // 更新熔断器运行时配置（partial update）
-  async setCircuitBreaker(params: { windowSize?: number; failureThreshold?: number; consecutiveFailuresThreshold?: number; requestTimeoutMs?: number; responseHeaderTimeoutMs?: number; streamFirstContentTimeoutMs?: number; streamInactivityTimeoutMs?: number; streamToolCallIdleTimeoutMs?: number }): Promise<unknown> {
+  async setCircuitBreaker(params: { windowSize?: number; failureThreshold?: number; consecutiveFailuresThreshold?: number; requestTimeoutMs?: number; responseHeaderTimeoutMs?: number; streamFirstContentTimeoutMs?: number; streamInactivityTimeoutMs?: number; streamToolCallIdleTimeoutMs?: number; failoverOnlyAfterCircuitOpen?: boolean }): Promise<unknown> {
     return this.request('/settings/circuit-breaker', {
       method: 'PUT',
       body: JSON.stringify(params)
