@@ -21,6 +21,11 @@ const routes = [
     path: '/cache-stats',
     component: () => import('@/views/ResponsesCacheStatsView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/base-url-latency',
+    component: () => import('@/views/BaseURLLatencyView.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

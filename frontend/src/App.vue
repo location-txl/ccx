@@ -81,7 +81,7 @@
               class="mobile-tab-selector text-body-2 font-weight-bold"
               append-icon="mdi-chevron-down"
             >
-              {{ route.path === '/conversations' ? t('app.tabs.conversations') : route.path === '/cache-stats' ? t('app.tabs.cacheStats') : translatedApiTabOptions.find(tab => tab.value === channelStore.activeTab)?.label }}
+              {{ route.path === '/conversations' ? t('app.tabs.conversations') : route.path === '/cache-stats' ? t('app.tabs.cacheStats') : route.path === '/base-url-latency' ? t('app.tabs.baseUrlLatency') : translatedApiTabOptions.find(tab => tab.value === channelStore.activeTab)?.label }}
             </v-btn>
           </template>
           <v-list density="compact" nav>
@@ -95,6 +95,9 @@
             </v-list-item>
             <v-list-item :active="route.path === '/cache-stats'" to="/cache-stats">
               <v-list-item-title>{{ t('app.tabs.cacheStats') }}</v-list-item-title>
+            </v-list-item>
+            <v-list-item :active="route.path === '/base-url-latency'" to="/base-url-latency">
+              <v-list-item-title>{{ t('app.tabs.baseUrlLatency') }}</v-list-item-title>
             </v-list-item>
           </v-list>
         </v-menu>
@@ -123,6 +126,10 @@
           <span class="api-type-text separator">/</span>
           <router-link to="/cache-stats" class="api-type-text" :class="{ active: route.path === '/cache-stats' }">
             {{ t('app.tabs.cacheStats') }}
+          </router-link>
+          <span class="api-type-text separator">/</span>
+          <router-link to="/base-url-latency" class="api-type-text" :class="{ active: route.path === '/base-url-latency' }">
+            {{ t('app.tabs.baseUrlLatency') }}
           </router-link>
           <span class="api-type-text separator">/</span>
           <router-link to="/channels/gemini" class="api-type-text" :class="{ active: route.path === '/channels/gemini' }">
@@ -237,7 +244,7 @@
     <v-main>
       <v-container fluid class="pa-4 pa-md-6">
         <!-- 全局统计顶部可折叠卡片（根据当前 Tab 显示对应统计） -->
-        <v-card v-if="isAuthenticated && !['/conversations', '/cache-stats'].includes(route.path)" class="mb-6 global-stats-panel">
+        <v-card v-if="isAuthenticated && !['/conversations', '/cache-stats', '/base-url-latency'].includes(route.path)" class="mb-6 global-stats-panel">
           <div
             class="global-stats-header d-flex align-center justify-space-between px-4 py-2"
             style="cursor: pointer;"
@@ -260,7 +267,7 @@
         </v-card>
 
         <!-- 统计卡片 - 玻璃拟态风格 -->
-        <v-row v-if="!['/conversations', '/cache-stats'].includes(route.path)" class="mb-6 stat-cards-row">
+        <v-row v-if="!['/conversations', '/cache-stats', '/base-url-latency'].includes(route.path)" class="mb-6 stat-cards-row">
           <v-col cols="6" sm="4">
             <div class="stat-card stat-card-info">
               <div class="stat-card-icon">
@@ -307,7 +314,7 @@
         </v-row>
 
         <!-- 操作按钮区域 - 现代化设计 -->
-        <div v-if="!['/conversations', '/cache-stats'].includes(route.path)" class="action-bar mb-6">
+        <div v-if="!['/conversations', '/cache-stats', '/base-url-latency'].includes(route.path)" class="action-bar mb-6">
           <div class="action-bar-left">
             <v-btn
               color="primary"
@@ -677,6 +684,18 @@
           <div class="text-caption text-medium-emphasis mt-2">
             {{ t('dialog.extensionConfig.failoverOnlyAfterCircuitOpenHint') }}
           </div>
+          <v-divider class="my-4" />
+          <v-switch
+            v-model="baseUrlLatencyProbeEnabled"
+            color="primary"
+            density="compact"
+            hide-details
+            inset
+            :label="t('dialog.extensionConfig.baseUrlLatencyProbe')"
+          />
+          <div class="text-caption text-medium-emphasis mt-2">
+            {{ t('dialog.extensionConfig.baseUrlLatencyProbeHint') }}
+          </div>
         </v-card-text>
         <v-divider />
         <v-card-actions class="cb-dialog-actions">
@@ -867,6 +886,7 @@ const {
   extensionConfigDialogOpen,
   extensionConfigSaving,
   failoverOnlyAfterCircuitOpen,
+  baseUrlLatencyProbeEnabled,
   openExtensionConfigDialog,
   saveExtensionConfig,
   isMac,

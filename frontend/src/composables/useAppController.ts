@@ -336,6 +336,7 @@ export function useAppController() {
   const extensionConfigDialogOpen = ref(false)
   const extensionConfigSaving = ref(false)
   const failoverOnlyAfterCircuitOpen = ref(false)
+  const baseUrlLatencyProbeEnabled = ref(false)
 
   // 预设向更宽松方向平移一档：原温和→均衡、原均衡→激进、原激进移除（需手动自定义）
   // 新增更宽松的温和策略，降低新用户误熔断概率
@@ -438,6 +439,7 @@ export function useAppController() {
     try {
       const params = await api.getCircuitBreaker()
       failoverOnlyAfterCircuitOpen.value = params.failoverOnlyAfterCircuitOpen === true
+      baseUrlLatencyProbeEnabled.value = params.baseUrlLatencyProbeEnabled === true
     } catch (e) {
       console.error('Failed to load extension config:', e)
     }
@@ -449,6 +451,7 @@ export function useAppController() {
     try {
       await api.setCircuitBreaker({
         failoverOnlyAfterCircuitOpen: failoverOnlyAfterCircuitOpen.value,
+        baseUrlLatencyProbeEnabled: baseUrlLatencyProbeEnabled.value,
       })
       extensionConfigDialogOpen.value = false
       showToast(t('toast.extensionConfigSaved'), 'success')
@@ -995,6 +998,7 @@ export function useAppController() {
     extensionConfigDialogOpen,
     extensionConfigSaving,
     failoverOnlyAfterCircuitOpen,
+    baseUrlLatencyProbeEnabled,
     openExtensionConfigDialog,
     saveExtensionConfig,
     isMac,

@@ -11,6 +11,7 @@ import type {
   CapabilityTestResult,
   Channel,
   ChannelDashboardResponse,
+  BaseURLLatencyResponse,
   ChannelDiscoveryRequest,
   ChannelDiscoveryResponse,
   ChannelKeyMetricsHistoryResponse,
@@ -424,6 +425,10 @@ export class ApiService {
     return this.request(`/messages/channels/dashboard${query}`)
   }
 
+  async getBaseURLLatency(): Promise<BaseURLLatencyResponse> {
+    return this.request('/settings/base-url-latency')
+  }
+
   // ============== Responses 多渠道调度 API ==============
 
   // 重新排序 Responses 渠道优先级
@@ -490,12 +495,12 @@ export class ApiService {
   // ============== 熔断器配置 API ==============
 
   // 获取熔断器运行时配置
-  async getCircuitBreaker(): Promise<{ windowSize: number; failureThreshold: number; consecutiveFailuresThreshold: number; requestTimeoutMs: number; responseHeaderTimeoutMs: number; streamFirstContentTimeoutMs: number; streamInactivityTimeoutMs: number; streamToolCallIdleTimeoutMs: number; failoverOnlyAfterCircuitOpen: boolean }> {
+  async getCircuitBreaker(): Promise<{ windowSize: number; failureThreshold: number; consecutiveFailuresThreshold: number; requestTimeoutMs: number; responseHeaderTimeoutMs: number; streamFirstContentTimeoutMs: number; streamInactivityTimeoutMs: number; streamToolCallIdleTimeoutMs: number; failoverOnlyAfterCircuitOpen: boolean; baseUrlLatencyProbeEnabled: boolean }> {
     return this.request('/settings/circuit-breaker')
   }
 
   // 更新熔断器运行时配置（partial update）
-  async setCircuitBreaker(params: { windowSize?: number; failureThreshold?: number; consecutiveFailuresThreshold?: number; requestTimeoutMs?: number; responseHeaderTimeoutMs?: number; streamFirstContentTimeoutMs?: number; streamInactivityTimeoutMs?: number; streamToolCallIdleTimeoutMs?: number; failoverOnlyAfterCircuitOpen?: boolean }): Promise<unknown> {
+  async setCircuitBreaker(params: { windowSize?: number; failureThreshold?: number; consecutiveFailuresThreshold?: number; requestTimeoutMs?: number; responseHeaderTimeoutMs?: number; streamFirstContentTimeoutMs?: number; streamInactivityTimeoutMs?: number; streamToolCallIdleTimeoutMs?: number; failoverOnlyAfterCircuitOpen?: boolean; baseUrlLatencyProbeEnabled?: boolean }): Promise<unknown> {
     return this.request('/settings/circuit-breaker', {
       method: 'PUT',
       body: JSON.stringify(params)

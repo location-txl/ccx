@@ -88,6 +88,19 @@ func TestSetCircuitBreaker_SavesFailoverOnlyAfterCircuitOpen(t *testing.T) {
 	}
 }
 
+func TestSetCircuitBreaker_SavesBaseURLLatencyProbeEnabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfgManager := newSettingsTestConfigManager(t)
+
+	w := performSettingsJSON(SetCircuitBreaker(cfgManager), http.MethodPut, `{"baseUrlLatencyProbeEnabled":true}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if !cfgManager.GetBaseURLLatencyProbeEnabled() {
+		t.Fatal("baseUrlLatencyProbeEnabled should be enabled")
+	}
+}
+
 func TestSetCircuitBreaker_AcceptsRequestLifecycleTimeouts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfgManager := newSettingsTestConfigManager(t)

@@ -17,13 +17,41 @@ type URLLatencyResult struct {
 
 // URLState URL 状态信息
 type URLState struct {
-	URL             string
-	OriginalIdx     int       // 原始索引（用于指标记录）
-	FailCount       int       // 连续失败次数
-	LastFailTime    time.Time // 最后失败时间
-	LastSuccessTime time.Time // 最后成功时间
-	TotalRequests   int64     // 总请求数
-	TotalFailures   int64     // 总失败数
+	URL                 string
+	OriginalIdx         int       // 原始索引（用于指标记录）
+	FailCount           int       // 连续失败次数
+	LastFailTime        time.Time // 最后失败时间
+	LastSuccessTime     time.Time // 最后成功时间
+	TotalRequests       int64     // 总请求数
+	TotalFailures       int64     // 总失败数
+	ProbeOK             bool      // 最近一次后台 TCP 探测是否可达
+	ProbeKnown          bool      // 是否已有后台探测结果
+	ProbeLatencyMs      int64     // 最近一次后台 TCP 连接耗时
+	ProbeUpdatedAt      time.Time // 最近一次后台探测时间
+	ProbeError          string    // 最近一次后台探测错误分类
+	PreferenceKnown     bool      // 当前排序是否采用后台探测结果
+	PreferenceOK        bool
+	PreferenceLatencyMs int64
+}
+
+// URLProbeResult 是一次后台 URL 探测结果。
+type URLProbeResult struct {
+	URL       string
+	OK        bool
+	LatencyMs int64
+	Error     string
+}
+
+// URLProbeSnapshot 是对管理前端公开的单个 URL 测速状态。
+type URLProbeSnapshot struct {
+	URL         string    `json:"url"`
+	OriginalIdx int       `json:"originalIndex"`
+	Rank        int       `json:"rank"`
+	Reachable   *bool     `json:"reachable,omitempty"`
+	LatencyMs   *int64    `json:"latencyMs,omitempty"`
+	ProbedAt    time.Time `json:"probedAt,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	Preferred   bool      `json:"preferred"`
 }
 
 // ChannelURLState 渠道 URL 状态
@@ -144,6 +172,92 @@ func (m *URLManager) MarkFailure(channelIndex int, url string) {
 	state.UpdatedAt = time.Now()
 }
 
+// ApplyProbeResults 记录一轮后台探测。只有至少一个 URL 可达时才更新延迟排序，
+// 以避免一次全量网络故障改变业务请求的既有故障转移顺序。
+func (m *URLManager) ApplyProbeResults(channelIndex int, urls []string, results []URLProbeResult) {
+	if len(urls) == 0 || len(results) == 0 {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	state := m.ensureChannelState(channelIndex, urls)
+	byURL := make(map[string]URLProbeResult, len(results))
+	hasReachable := false
+	for _, result := range results {
+		byURL[result.URL] = result
+		hasReachable = hasReachable || result.OK
+	}
+
+	now := time.Now()
+	for _, urlState := range state.URLs {
+		result, exists := byURL[urlState.URL]
+		if !exists {
+			continue
+		}
+		urlState.ProbeKnown = true
+		urlState.ProbeOK = result.OK
+		urlState.ProbeLatencyMs = result.LatencyMs
+		urlState.ProbeUpdatedAt = now
+		urlState.ProbeError = result.Error
+		if hasReachable {
+			urlState.PreferenceKnown = true
+			urlState.PreferenceOK = result.OK
+			urlState.PreferenceLatencyMs = result.LatencyMs
+		}
+	}
+
+	if hasReachable {
+		m.sortURLs(state)
+	}
+	state.UpdatedAt = now
+}
+
+// ClearProbePreferences 清除后台探测对业务请求排序的影响，保留探测结果和请求失败状态。
+func (m *URLManager) ClearProbePreferences() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, state := range m.channelStates {
+		for _, urlState := range state.URLs {
+			urlState.PreferenceKnown = false
+			urlState.PreferenceOK = false
+			urlState.PreferenceLatencyMs = 0
+		}
+		m.sortURLs(state)
+		state.UpdatedAt = time.Now()
+	}
+}
+
+// GetProbeSnapshot 返回指定渠道 URL 的最近探测状态；不会创建新的渠道状态。
+func (m *URLManager) GetProbeSnapshot(channelIndex int) []URLProbeSnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	state, ok := m.channelStates[channelIndex]
+	if !ok {
+		return nil
+	}
+
+	results := make([]URLProbeSnapshot, len(state.URLs))
+	for i, urlState := range state.URLs {
+		result := URLProbeSnapshot{URL: urlState.URL, OriginalIdx: urlState.OriginalIdx, Rank: i + 1, Preferred: i == 0}
+		if urlState.ProbeKnown {
+			reachable := urlState.ProbeOK
+			latency := urlState.ProbeLatencyMs
+			result.Reachable = &reachable
+			if urlState.ProbeOK {
+				result.LatencyMs = &latency
+			}
+			result.ProbedAt = urlState.ProbeUpdatedAt
+			result.Error = urlState.ProbeError
+		}
+		results[i] = result
+	}
+	return results
+}
+
 // ensureChannelState 确保渠道状态存在，并同步 URL 列表
 func (m *URLManager) ensureChannelState(channelIndex int, urls []string) *ChannelURLState {
 	state, ok := m.channelStates[channelIndex]
@@ -220,8 +334,7 @@ func (m *URLManager) sortURLs(state *ChannelURLState) {
 			return iNoFail
 		}
 		if iNoFail && jNoFail {
-			// 都无失败，按原始索引
-			return ui.OriginalIdx < uj.OriginalIdx
+			return compareProbePreference(ui, uj)
 		}
 
 		// 都有失败记录，检查冷却期
@@ -237,7 +350,7 @@ func (m *URLManager) sortURLs(state *ChannelURLState) {
 			if ui.FailCount != uj.FailCount {
 				return ui.FailCount < uj.FailCount
 			}
-			return ui.OriginalIdx < uj.OriginalIdx
+			return compareProbePreference(ui, uj)
 		}
 
 		// 都在冷却期内，剩余冷却时间短的优先
@@ -245,6 +358,26 @@ func (m *URLManager) sortURLs(state *ChannelURLState) {
 		jRemaining := m.failureCooldown - now.Sub(uj.LastFailTime)
 		return iRemaining < jRemaining
 	})
+}
+
+func compareProbePreference(ui, uj *URLState) bool {
+	priority := func(state *URLState) int {
+		if !state.PreferenceKnown {
+			return 1
+		}
+		if state.PreferenceOK {
+			return 0
+		}
+		return 2
+	}
+	pi, pj := priority(ui), priority(uj)
+	if pi != pj {
+		return pi < pj
+	}
+	if pi == 0 && ui.PreferenceLatencyMs != uj.PreferenceLatencyMs {
+		return ui.PreferenceLatencyMs < uj.PreferenceLatencyMs
+	}
+	return ui.OriginalIdx < uj.OriginalIdx
 }
 
 // InvalidateChannel 使渠道状态失效

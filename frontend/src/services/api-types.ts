@@ -226,6 +226,31 @@ export interface SchedulerStatsResponse {
   circuitBackoffMax?: string
 }
 
+export interface BaseURLLatencyEntry {
+  url: string
+  originalIndex: number
+  rank: number
+  reachable?: boolean
+  latencyMs?: number
+  probedAt?: string
+  error?: string
+  preferred: boolean
+}
+
+export interface BaseURLLatencyChannel {
+  kind: ChannelKind
+  channelIndex: number
+  channelName: string
+  urls: BaseURLLatencyEntry[]
+}
+
+export interface BaseURLLatencyResponse {
+  enabled: boolean
+  intervalSeconds: number
+  lastRunAt?: string
+  channels: BaseURLLatencyChannel[]
+}
+
 export type ChannelKind = 'messages' | 'chat' | 'responses' | 'gemini' | 'images' | 'vectors'
 
 export interface SchedulerDiagnoseContextRequirement {

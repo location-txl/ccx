@@ -520,6 +520,9 @@ type Config struct {
 	// 仅在渠道聚合熔断后才允许跨渠道故障转移。
 	FailoverOnlyAfterCircuitOpen bool `json:"failoverOnlyAfterCircuitOpen,omitempty"`
 
+	// 定期测试多 Base URL 的 TCP 连接延迟，并优先使用最快的可达地址。
+	BaseURLLatencyProbeEnabled bool `json:"baseUrlLatencyProbeEnabled,omitempty"`
+
 	// 移除计费头中的 cch= 参数：兼容旧全局配置读取；新语义已下沉到渠道级字段
 	StripBillingHeader bool `json:"stripBillingHeader,omitempty"`
 
@@ -866,6 +869,28 @@ func (cm *ConfigManager) SetFailoverOnlyAfterCircuitOpen(enabled bool) error {
 	}
 
 	log.Printf("[Config-Failover] 仅熔断后跨渠道故障转移已%s", map[bool]string{true: "启用", false: "关闭"}[enabled])
+	cm.fireConfigChangeCallbacks()
+	return nil
+}
+
+// GetBaseURLLatencyProbeEnabled 返回多 Base URL 延迟测速是否启用。
+func (cm *ConfigManager) GetBaseURLLatencyProbeEnabled() bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.config.BaseURLLatencyProbeEnabled
+}
+
+// SetBaseURLLatencyProbeEnabled 更新多 Base URL 延迟测速开关。
+func (cm *ConfigManager) SetBaseURLLatencyProbeEnabled(enabled bool) error {
+	cm.mu.Lock()
+	cm.config.BaseURLLatencyProbeEnabled = enabled
+
+	if err := cm.saveConfigLocked(cm.config); err != nil {
+		cm.mu.Unlock()
+		return err
+	}
+
+	log.Printf("[Config-BaseURLLatency] 多 Base URL 延迟测速已%s", map[bool]string{true: "启用", false: "关闭"}[enabled])
 	cm.fireConfigChangeCallbacks()
 	return nil
 }

@@ -477,6 +477,15 @@ func main() {
 
 	channelScheduler := scheduler.NewChannelScheduler(cfgManager, messagesMetricsManager, responsesMetricsManager, geminiMetricsManager, chatMetricsManager, imagesMetricsManager, traceAffinityManager, urlManager, vectorsMetricsManager)
 	channelScheduler.SetRateLimitManager(rateLimitManager)
+	baseURLLatencyProber := scheduler.NewBaseURLLatencyProber(cfgManager, channelScheduler)
+	baseURLLatencyProber.Start()
+	cfgManager.RegisterOnConfigChange(func(config.Config) {
+		if cfgManager.GetBaseURLLatencyProbeEnabled() {
+			baseURLLatencyProber.Trigger()
+			return
+		}
+		channelScheduler.ClearBaseURLProbePreferences()
+	})
 	log.Printf("[Scheduler-Init] 多渠道调度器已初始化 (失败率阈值: %.0f%%, 滑动窗口: %d, 连续失败阈值: %d)",
 		messagesMetricsManager.GetFailureThreshold()*100, messagesMetricsManager.GetWindowSize(), messagesMetricsManager.GetConsecutiveRetryableFailuresThreshold())
 
@@ -860,6 +869,7 @@ func main() {
 		// 熔断器运行时设置
 		apiGroup.GET("/settings/circuit-breaker", handlers.GetCircuitBreaker(cfgManager, messagesMetricsManager.GetCircuitBreakerConfig, envCfg))
 		apiGroup.PUT("/settings/circuit-breaker", handlers.SetCircuitBreaker(cfgManager))
+		apiGroup.GET("/settings/base-url-latency", handlers.GetBaseURLLatency(channelScheduler))
 
 		// 会话调度看板 API
 		convDeps := &handlers.ConversationHandlerDeps{

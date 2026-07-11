@@ -4,6 +4,7 @@ package handlers
 import (
 	"github.com/BenedictKing/ccx/internal/config"
 	"github.com/BenedictKing/ccx/internal/metrics"
+	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/gin-gonic/gin"
 )
 
@@ -54,6 +55,7 @@ func GetCircuitBreaker(cfgManager *config.ConfigManager, getCurrent func() metri
 			"streamInactivityTimeoutMs":    params.StreamInactivityTimeoutMs,
 			"streamToolCallIdleTimeoutMs":  params.StreamToolCallIdleTimeoutMs,
 			"failoverOnlyAfterCircuitOpen": cfgManager.GetFailoverOnlyAfterCircuitOpen(),
+			"baseUrlLatencyProbeEnabled":   cfgManager.GetBaseURLLatencyProbeEnabled(),
 		})
 	}
 }
@@ -71,6 +73,7 @@ func SetCircuitBreaker(cfgManager *config.ConfigManager) gin.HandlerFunc {
 			StreamInactivityTimeoutMs    *int     `json:"streamInactivityTimeoutMs"`
 			StreamToolCallIdleTimeoutMs  *int     `json:"streamToolCallIdleTimeoutMs"`
 			FailoverOnlyAfterCircuitOpen *bool    `json:"failoverOnlyAfterCircuitOpen"`
+			BaseURLLatencyProbeEnabled   *bool    `json:"baseUrlLatencyProbeEnabled"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(400, gin.H{"error": "请求格式无效"})
@@ -146,12 +149,19 @@ func SetCircuitBreaker(cfgManager *config.ConfigManager) gin.HandlerFunc {
 				return
 			}
 		}
+		if req.BaseURLLatencyProbeEnabled != nil {
+			if err := cfgManager.SetBaseURLLatencyProbeEnabled(*req.BaseURLLatencyProbeEnabled); err != nil {
+				c.JSON(500, gin.H{"error": "保存配置失败"})
+				return
+			}
+		}
 
 		// 返回更新后的完整配置
 		updated := cfgManager.GetCircuitBreakerConfig()
 		c.JSON(200, gin.H{
 			"success":                      true,
 			"failoverOnlyAfterCircuitOpen": cfgManager.GetFailoverOnlyAfterCircuitOpen(),
+			"baseUrlLatencyProbeEnabled":   cfgManager.GetBaseURLLatencyProbeEnabled(),
 			"circuitBreaker": gin.H{
 				"windowSize":                   updated.WindowSize,
 				"failureThreshold":             updated.FailureThreshold,
@@ -163,5 +173,12 @@ func SetCircuitBreaker(cfgManager *config.ConfigManager) gin.HandlerFunc {
 				"streamToolCallIdleTimeoutMs":  updated.StreamToolCallIdleTimeoutMs,
 			},
 		})
+	}
+}
+
+// GetBaseURLLatency 返回多 Base URL 后台测速的实时快照。
+func GetBaseURLLatency(sch *scheduler.ChannelScheduler) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(200, sch.GetBaseURLLatencySnapshot())
 	}
 }
