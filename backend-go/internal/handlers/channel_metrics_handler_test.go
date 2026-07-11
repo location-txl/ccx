@@ -18,7 +18,8 @@ import (
 )
 
 type fakePersistenceStore struct {
-	bucketsByMetricsKey map[string][]metrics.AggregatedBucket
+	bucketsByMetricsKey      map[string][]metrics.AggregatedBucket
+	modelBucketsByMetricsKey map[string][]metrics.ModelAggregatedBucket
 }
 
 func (f *fakePersistenceStore) AddRecord(record metrics.PersistentRecord) {}
@@ -35,7 +36,7 @@ func (f *fakePersistenceStore) UpsertCircuitState(state metrics.PersistentCircui
 	return nil
 }
 func (f *fakePersistenceStore) QueryModelAggregatedHistory(apiType string, since time.Time, intervalSeconds int64, metricsKey string, baseURL string) ([]metrics.ModelAggregatedBucket, error) {
-	return nil, nil
+	return append([]metrics.ModelAggregatedBucket(nil), f.modelBucketsByMetricsKey[metricsKey]...), nil
 }
 func (f *fakePersistenceStore) QueryAggregatedHistory(apiType string, since time.Time, intervalSeconds int64, metricsKey string, baseURL string) ([]metrics.AggregatedBucket, error) {
 	return append([]metrics.AggregatedBucket(nil), f.bucketsByMetricsKey[metricsKey]...), nil

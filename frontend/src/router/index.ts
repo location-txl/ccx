@@ -16,6 +16,11 @@ const routes = [
     path: '/conversations',
     component: () => import('@/views/ConversationsView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/cache-stats',
+    component: () => import('@/views/ResponsesCacheStatsView.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

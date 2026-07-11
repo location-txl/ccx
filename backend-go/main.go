@@ -713,6 +713,7 @@ func main() {
 		apiGroup.GET("/responses/channels/metrics", handlers.GetChannelMetricsWithConfig(responsesMetricsManager, cfgManager, true))
 		apiGroup.GET("/responses/channels/metrics/history", handlers.GetChannelMetricsHistory(responsesMetricsManager, cfgManager, true))
 		apiGroup.GET("/responses/channels/:id/keys/metrics/history", handlers.GetChannelKeyMetricsHistory(responsesMetricsManager, cfgManager, true))
+		apiGroup.GET("/responses/cache-stats", handlers.GetResponsesCacheStats(responsesMetricsManager, cfgManager))
 		apiGroup.POST("/responses/channels/scheduler/diagnose", handlers.DiagnoseSchedulerSelection(channelScheduler, scheduler.ChannelKindResponses))
 		apiGroup.GET("/responses/global/stats/history", handlers.GetGlobalStatsHistory(responsesMetricsManager))
 		apiGroup.GET("/responses/ping/:id", responses.PingChannel(cfgManager))

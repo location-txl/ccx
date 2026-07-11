@@ -27,6 +27,7 @@ import type {
   GlobalStatsHistoryResponse,
   MetricsHistoryResponse,
   ModelStatsHistoryResponse,
+  ResponsesCacheStatsResponse,
   ModelsResponse,
   PingResult,
   ResumeChannelResponse,
@@ -540,6 +541,10 @@ export class ApiService {
 
   async getModelStatsHistory(type: 'messages' | 'responses' | 'gemini' | 'chat' | 'images' | 'vectors', duration: string = '24h'): Promise<ModelStatsHistoryResponse> {
     return this.request(`/${type}/models/stats/history?duration=${duration}`)
+  }
+
+  async getResponsesCacheStats(duration: '24h' | '7d' | '30d'): Promise<ResponsesCacheStatsResponse> {
+    return this.request(`/responses/cache-stats?duration=${duration}`)
   }
 
   // ============== 渠道日志 API ==============

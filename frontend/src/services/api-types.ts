@@ -576,6 +576,31 @@ export interface ModelStatsHistoryResponse {
   interval: string
 }
 
+export interface CacheStatsSummary {
+  requestCount: number
+  inputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  cacheHitRate: number | null
+}
+
+export interface CacheStatsModel extends CacheStatsSummary {
+  model: string
+}
+
+export interface CacheStatsChannel {
+  channelIndex: number
+  channelName: string
+  sharedCredentials: boolean
+  summary: CacheStatsSummary
+  models: CacheStatsModel[]
+}
+
+export interface ResponsesCacheStatsResponse {
+  duration: '24h' | '7d' | '30d'
+  channels: CacheStatsChannel[]
+}
+
 // ============== 渠道日志类型 ==============
 
 export interface ChannelLogEntry {
